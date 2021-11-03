@@ -60,10 +60,10 @@ class SurveyqqOcean(ElasticOcean):
 
         params = []
 
-        owner = url.split('/')[-2]
-        repository = url.split('/')[-1]
+        owner = url.split(',')[0]
+        repositories = url.split(',')[1:]
         params.append(owner)
-        params.append(repository)
+        params.append(repositories)
         return params
 
     def _fix_item(self, item):
