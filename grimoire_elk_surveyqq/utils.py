@@ -29,4 +29,7 @@ from .raw.surveyqq import SurveyqqOcean
 
 def get_connectors():
 
-    return {"surveyqq": [Surveyqq, SurveyqqOcean, SurveyqqOcean, SurveyqqCommand]}
+    return {"surveyqq": [Surveyqq, SurveyqqOcean, SurveyqqEnrich, SurveyqqCommand]}
+
+
+    

@@ -36,6 +36,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection
 
 from grimoire_elk.enriched.utils import get_time_diff_days
 
+
 from grimoire_elk.enriched.enrich import Enrich, metadata
 from grimoire_elk.elastic_mapping import Mapping as BaseMapping
 
@@ -118,6 +119,7 @@ class SurveyqqEnrich(Enrich):
 
         category = item['category']
         item = item['data']
+        print("item",item)
 
         if category == "issue":
             identity_types = ['user', 'assignee']
@@ -156,16 +158,17 @@ class SurveyqqEnrich(Enrich):
     def get_project_repository(self, eitem):
         repo = eitem['origin']
         return repo
+    
 
-    def get_time_to_first_attention(self, item):
-        """Get the first date at which a comment was made to the issue by someone
-        other than the user who created the issue
-        """
-        comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']
-                         if item['user']['login'] != comment['user']['login']]
-        if comment_dates:
-            return min(comment_dates)
-        return None
+    # def get_time_to_first_attention(self, item):
+    #     """Get the first date at which a comment was made to the issue by someone
+    #     other than the user who created the issue
+    #     """
+    #     comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']
+    #                      if item['user']['login'] != comment['user']['login']]
+    #     if comment_dates:
+    #         return min(comment_dates)
+    #     return None
 
     #exclude bot
     def get_num_of_comments_without_bot(self, item):
@@ -501,3 +504,15 @@ class SurveyqqEnrich(Enrich):
                              sort_on_field=sort_on_field,
                              no_incremental=no_incremental,
                              seconds=seconds)
+
+
+def get_repository_filter(perceval_backend, perceval_backend_name, term=False):
+    """ Get the filter needed for get the items in a repository """
+
+    filter_ = {}
+
+    if not perceval_backend:
+        return filter_
+
+    field = 'origin'
+    value = GITEE +perceval_backend.owner +"/" + perceval_backend.owner
