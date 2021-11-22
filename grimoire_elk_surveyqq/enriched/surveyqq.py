@@ -21,7 +21,7 @@
 
 import logging
 import re
-import time
+import json
 
 import requests
 
@@ -119,40 +119,44 @@ class SurveyqqEnrich(Enrich):
 
         category = item['category']
         item = item['data']
-        print("item",item)
+       
+        user = self.get_sh_identity(item["answer"])
+        return user
 
-        if category == "issue":
-            identity_types = ['user', 'assignee']
-        elif category == "pull_request":
-            identity_types = ['user', 'merged_by']
-        else:
-            identity_types = []
 
-        for identity in identity_types:
-            identity_attr = identity + "_data"
-            if item[identity] and identity_attr in item:
-                # In user_data we have the full user data
-                user = self.get_sh_identity(item[identity_attr])
-                if user:
-                    yield user
 
-    def get_sh_identity(self, item, identity_field=None):
+        # if category == "issue":
+        #     identity_types = ['user', 'assignee']
+        # elif category == "pull_request":
+        #     identity_types = ['user', 'merged_by']
+        # else:
+        #     identity_types = []
+
+        # for identity in identity_types:
+        #     identity_attr = identity + "_data"
+        #     if item[identity] and identity_attr in item:
+        #         # In user_data we have the full user data
+        #         user = self.get_sh_identity(item[identity_attr])
+        #         if user:
+        #             yield user
+
+    def get_sh_identity(self, item_answer, identity_field=None):
         identity = {}
 
-        user = item  # by default a specific user dict is expected
-        if 'data' in item and type(item) == dict:
-            user = item['data'][identity_field]
+        user_answer  = item_answer[0]["questions"]  # by default a specific user dict is expected
+        # if 'data' in item and type(item) == dict:
+        #     user = item['data'][identity_field]
 
-        if not user:
-            return identity
+        # if not user:
+        #     return identity
 
-        identity['username'] = user['login']
-        identity['email'] = None
+        identity['username'] = user_answer[0]["text"]
+        identity['email'] = user_answer[1]["text"]
         identity['name'] = None
-        if 'email' in user:
-            identity['email'] = user['email']
-        if 'name' in user:
-            identity['name'] = user['name']
+        # if 'email' in user:
+        #     identity['email'] = user['email']
+        # if 'name' in user:
+        #     identity['name'] = user['name']
         return identity
 
     def get_project_repository(self, eitem):
@@ -232,7 +236,7 @@ class SurveyqqEnrich(Enrich):
 
         rich_item = {}
         if item['category'] == 'issue':
-            rich_item = self.__get_rich_issue(item)
+            rich_item = self.__get_rich_survey(item)
         elif item['category'] == 'pull_request':
             rich_item = self.__get_rich_pull(item)
         elif item['category'] == 'repository':
@@ -351,6 +355,31 @@ class SurveyqqEnrich(Enrich):
         rich_pr.update(self.get_item_sh(item, self.pr_roles))
 
         return rich_pr
+    def __get_rich_survey(self, item):
+        rich_survey = {}
+        survey = item['data']["answer"][0]["questions"]
+        rich_survey["user_login"] = survey[0]["text"]
+        rich_survey["user_email"] = survey[1]["text"]
+        rich_survey["issue_link"] = survey[2]["text"]
+        rich_survey["survey_score"] = survey[3]["text"]
+        rich_survey["participated_reason"] = [op["text"] for op in survey[4]["options"]]
+        if rich_survey["survey_score"] in range(0,7):
+            rich_survey["issue_unsatisfied"] = [op["text"] for op in survey[5]["options"]]
+        if rich_survey["survey_score"] in range(7,9):
+            rich_survey["issue_to_improve"] = [op["text"] for op in survey[5]["options"]]
+        if rich_survey["survey_score"] in range(9,11):
+            rich_survey["issue_satisfied"] = [op["text"] for op in survey[5]["options"]]
+        
+        if not (item['data']['comment_data']=="Invalid Issue Link" or item['data']['comment_data']=="Can't get message about Issue"):
+            print('rich_survey["user_login"]',rich_survey["user_login"])
+            # print("item['data']",item['data'])
+
+            rich_survey["survey_answer_role"] = self.__get_survey_answer_role(rich_survey["user_login"], item['data'])
+        return rich_survey
+
+    
+
+
 
     def __get_rich_issue(self, item):
         rich_issue = {}
@@ -361,101 +390,129 @@ class SurveyqqEnrich(Enrich):
             else:
                 rich_issue[f] = None
         # The real data
-        issue = item['data']
+        if not (item['data']['comment_date']=="Invalid Issue Link" or item['data']['comment_date']=="Can't get message about Issue"):
+            issue = item['data']["issue_data"]
+            survey = item['data']["answer"]
+        
 
-        rich_issue['time_to_close_days'] = \
-            get_time_diff_days(issue['created_at'], issue['finished_at'])
+        # rich_issue['time_to_close_days'] = \
+        #     get_time_diff_days(issue['created_at'], issue['finished_at'])
 
         #说明原因
-        if issue['state'] == 'open' or issue['state'] == 'progressing':
-            rich_issue['time_open_days'] = \
-                get_time_diff_days(issue['created_at'], datetime_utcnow().replace(tzinfo=None))
-        else:
-            rich_issue['time_open_days'] = rich_issue['time_to_close_days']
+        # if issue['state'] == 'open' or issue['state'] == 'progressing':
+        #     rich_issue['time_open_days'] = \
+        #         get_time_diff_days(issue['created_at'], datetime_utcnow().replace(tzinfo=None))
+        # else:
+        #     rich_issue['time_open_days'] = rich_issue['time_to_close_days']
 
-        rich_issue['user_login'] = issue['user']['login']
+            rich_issue['user_login'] = issue['user']['login']
 
-        user = issue.get('user_data', None)
-        if user is not None and user:
-            rich_issue['user_name'] = user['name']
-            rich_issue['author_name'] = user['name']
-            rich_issue["user_domain"] = self.get_email_domain(user['email']) if user.get('email', None) else None
-            rich_issue['user_org'] = user.get('company', None)
-            rich_issue['user_location'] = user.get('location', None)
-            rich_issue['user_geolocation'] = None
-        else:
-            rich_issue['user_name'] = None
-            rich_issue["user_domain"] = None
-            rich_issue['user_org'] = None
-            rich_issue['user_location'] = None
-            rich_issue['user_geolocation'] = None
-            rich_issue['author_name'] = None
+            user = issue.get('user_data', None)
+            if user is not None and user:
+                rich_issue['user_name'] = user['name']
+                rich_issue['author_name'] = user['name']
+                rich_issue["user_domain"] = self.get_email_domain(user['email']) if user.get('email', None) else None
+                rich_issue['user_org'] = user.get('company', None)
+                rich_issue['user_location'] = user.get('location', None)
+                rich_issue['user_geolocation'] = None
+            else:
+                rich_issue['user_name'] = None
+                rich_issue["user_domain"] = None
+                rich_issue['user_org'] = None
+                rich_issue['user_location'] = None
+                rich_issue['user_geolocation'] = None
+                rich_issue['author_name'] = None
 
-        assignee = issue.get('assignee_data', None)
-        if assignee and assignee is not None:
-            assignee = issue['assignee_data']
-            rich_issue['assignee_login'] = assignee['login']
-            rich_issue['assignee_name'] = assignee['name']
-            rich_issue["assignee_domain"] = self.get_email_domain(assignee['email']) if assignee.get('email', None) else None
-            rich_issue['assignee_org'] = assignee.get('company', None)
-            rich_issue['assignee_location'] = assignee.get('location', None)
-            rich_issue['assignee_geolocation'] = None
-        else:
-            rich_issue['assignee_name'] = None
-            rich_issue['assignee_login'] = None
-            rich_issue["assignee_domain"] = None
-            rich_issue['assignee_org'] = None
-            rich_issue['assignee_location'] = None
-            rich_issue['assignee_geolocation'] = None
+            assignee = issue.get('assignee_data', None)
+            if assignee and assignee is not None:
+                assignee = issue['assignee_data']
+                rich_issue['assignee_login'] = assignee['login']
+                rich_issue['assignee_name'] = assignee['name']
+                rich_issue["assignee_domain"] = self.get_email_domain(assignee['email']) if assignee.get('email', None) else None
+                rich_issue['assignee_org'] = assignee.get('company', None)
+                rich_issue['assignee_location'] = assignee.get('location', None)
+                rich_issue['assignee_geolocation'] = None
+            else:
+                rich_issue['assignee_name'] = None
+                rich_issue['assignee_login'] = None
+                rich_issue["assignee_domain"] = None
+                rich_issue['assignee_org'] = None
+                rich_issue['assignee_location'] = None
+                rich_issue['assignee_geolocation'] = None
 
-        rich_issue['id'] = issue['id']
-        rich_issue['id_in_repo'] = issue['html_url'].split("/")[-1]
-        rich_issue['repository'] = self.get_project_repository(rich_issue)
-        rich_issue['title'] = issue['title']
-        rich_issue['title_analyzed'] = issue['title']
-        rich_issue['state'] = issue['state']
-        rich_issue['created_at'] = issue['created_at']
-        rich_issue['updated_at'] = issue['updated_at']
-        rich_issue['closed_at'] = issue['finished_at']
-        rich_issue['url'] = issue['html_url']
-        rich_issue['issue_type'] = issue['issue_type']
-        labels = []
-        [labels.append(label['name']) for label in issue['labels'] if 'labels' in issue]
-        rich_issue['labels'] = labels
+            rich_issue['id'] = issue['id']
+            rich_issue['id_in_repo'] = issue['html_url'].split("/")[-1]
+            rich_issue['repository'] = self.get_project_repository(rich_issue)
+            rich_issue['title'] = issue['title']
+            rich_issue['title_analyzed'] = issue['title']
+            rich_issue['state'] = issue['state']
+            rich_issue['created_at'] = issue['created_at']
+            rich_issue['updated_at'] = issue['updated_at']
+            rich_issue['closed_at'] = issue['finished_at']
+            rich_issue['url'] = issue['html_url']
+            rich_issue['issue_type'] = issue['issue_type']
+            labels = []
+            [labels.append(label['name']) for label in issue['labels'] if 'labels' in issue]
+            rich_issue['labels'] = labels
 
-        rich_issue['pull_request'] = True
-        rich_issue['item_type'] = 'pull request'
-        if 'head' not in issue.keys() and 'pull_request' not in issue.keys():
-            rich_issue['pull_request'] = False
-            rich_issue['item_type'] = 'issue'
+            rich_issue['pull_request'] = True
+            rich_issue['item_type'] = 'pull request'
+            if 'head' not in issue.keys() and 'pull_request' not in issue.keys():
+                rich_issue['pull_request'] = False
+                rich_issue['item_type'] = 'issue'
 
-        rich_issue['gitee_repo'] = rich_issue['repository'].replace(GITEE, '')
-        rich_issue['gitee_repo'] = re.sub('.git$', '', rich_issue['gitee_repo'])
-        rich_issue["url_id"] = rich_issue['gitee_repo'] + "/issues/" + rich_issue['id_in_repo']
+            rich_issue['gitee_repo'] = rich_issue['repository'].replace(GITEE, '')
+            rich_issue['gitee_repo'] = re.sub('.git$', '', rich_issue['gitee_repo'])
+            rich_issue["url_id"] = rich_issue['gitee_repo'] + "/issues/" + rich_issue['id_in_repo']
 
-        if self.prjs_map:
-            rich_issue.update(self.get_item_project(rich_issue))
+            if self.prjs_map:
+                rich_issue.update(self.get_item_project(rich_issue))
+            
+            rich_issue["survey_answer_role"] = self.__get_survey_answer_role(name,item['data'])
 
-        if 'project' in item:
-            rich_issue['project'] = item['project']
 
-        rich_issue['time_to_first_attention'] = None
-        if issue['comments'] != 0:
-            rich_issue['time_to_first_attention'] = \
-                get_time_diff_days(str_to_datetime(issue['created_at']),
-                                   self.get_time_to_first_attention(issue))
-            rich_issue['num_of_comments_without_bot'] = \
-                                   self.get_num_of_comments_without_bot(issue)
-            rich_issue['time_to_first_attention_without_bot'] = \
-                get_time_diff_days(str_to_datetime(issue['created_at']),
-                                    self.get_time_to_first_attention_without_bot(issue))
+            # if 'project' in item:
+            #     rich_issue['project'] = item['project']
 
-        rich_issue.update(self.get_grimoire_fields(issue['created_at'], "issue"))
+            # rich_issue['time_to_first_attention'] = None
+        # if item['data']['comment_date']=="Invalid Issue Link" or item['data']['comment_date']=="Can't get message about Issue":
+            # rich_issue['time_to_first_attention'] = \
+            #     get_time_diff_days(str_to_datetime(issue['created_at']),
+            #                        self.get_time_to_first_attention(issue))
+            # rich_issue['num_of_comments_without_bot'] = \
+            #                        self.get_num_of_comments_without_bot(issue)
+            # rich_issue['time_to_first_attention_without_bot'] = \
+            #     get_time_diff_days(str_to_datetime(issue['created_at']),
+            #                         self.get_time_to_first_attention_without_bot(issue))
 
-        item[self.get_field_date()] = rich_issue[self.get_field_date()]
-        rich_issue.update(self.get_item_sh(item, self.issue_roles))
+            rich_issue.update(self.get_grimoire_fields(issue['created_at'], "issue"))
+
+            item[self.get_field_date()] = rich_issue[self.get_field_date()]
+            rich_issue.update(self.get_item_sh(item, self.issue_roles))
+        
+        
 
         return rich_issue
+    
+    def __get_survey_answer_role(self, name, item):
+            if name == item["issue_data"]["user"]["login"]:
+                return "issue_owner"
+            elif item["issue_data"]["assignee"] and name in item["issue_data"]["assignee"]:
+                return "assignee"
+            elif name in [user["user"]["login"] for user in item["comment_data"]]:
+                return "commenter"
+           
+            return None
+
+            
+
+        
+            
+        
+        
+
+
+
 
     def __get_rich_repo(self, item):
         rich_repo = {}
