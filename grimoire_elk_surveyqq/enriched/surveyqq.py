@@ -119,11 +119,9 @@ class SurveyqqEnrich(Enrich):
 
         category = item['category']
         item = item['data']
-       
+
         user = self.get_sh_identity(item["answer"])
         return user
-
-
 
         # if category == "issue":
         #     identity_types = ['user', 'assignee']
@@ -143,7 +141,8 @@ class SurveyqqEnrich(Enrich):
     def get_sh_identity(self, item_answer, identity_field=None):
         identity = {}
 
-        user_answer  = item_answer[0]["questions"]  # by default a specific user dict is expected
+        # by default a specific user dict is expected
+        user_answer = item_answer[0]["questions"]
         identity['username'] = user_answer[0]["text"]
         identity['email'] = user_answer[1]["text"]
         identity['name'] = None
@@ -152,7 +151,6 @@ class SurveyqqEnrich(Enrich):
     def get_project_repository(self, eitem):
         repo = eitem['origin']
         return repo
-    
 
     @metadata
     def get_rich_item(self, item):
@@ -168,7 +166,6 @@ class SurveyqqEnrich(Enrich):
         self.add_metadata_filter_raw(rich_item)
         return rich_item
 
- 
     def __get_rich_survey(self, item):
         rich_survey = {}
         survey = item['data']["answer"][0]["questions"]
@@ -176,42 +173,44 @@ class SurveyqqEnrich(Enrich):
         rich_survey["user_email"] = survey[1]["text"]
         rich_survey["issue_link"] = survey[2]["text"]
         rich_survey["survey_score"] = survey[3]["text"]
-        rich_survey["participated_reason"] = [op["text"] for op in survey[4]["options"]]
-        if rich_survey["survey_score"] in range(0,7):
-            rich_survey["issue_unsatisfied"] = [op["text"] for op in survey[5]["options"]]
-        if rich_survey["survey_score"] in range(7,9):
-            rich_survey["issue_to_improve"] = [op["text"] for op in survey[5]["options"]]
-        if rich_survey["survey_score"] in range(9,11):
-            rich_survey["issue_satisfied"] = [op["text"] for op in survey[5]["options"]]
-        
-        if item['data']['comment_data'] not in ["Invalid Issue Link" ,"Can't get message about Issue"]:
-            rich_survey["survey_answer_role"] = self.__get_survey_answer_role(rich_survey["user_login"], item['data'])
-       
-        
+        rich_survey["participated_reason"] = [op["text"]
+                                              for op in survey[4]["options"]]
+        if rich_survey["survey_score"] in range(0, 7):
+            rich_survey["issue_unsatisfied"] = [op["text"]
+                                                for op in survey[5]["options"]]
+        if rich_survey["survey_score"] in range(7, 9):
+            rich_survey["issue_to_improve"] = [op["text"]
+                                               for op in survey[5]["options"]]
+        if rich_survey["survey_score"] in range(9, 11):
+            rich_survey["issue_satisfied"] = [op["text"]
+                                              for op in survey[5]["options"]]
+
+        if item['data']['comment_data'] not in ["Invalid Issue Link", "Can't get message about Issue"]:
+            rich_survey["survey_answer_role"] = self.__get_survey_answer_role(
+                rich_survey["user_login"], item['data'])
+
         if self.prjs_map:
             rich_survey.update(self.get_item_project(rich_survey))
 
         if 'project' in item:
             rich_survey['project'] = item['project']
 
-        rich_survey.update(self.get_grimoire_fields(item['data']["started_at"], "pull_request"))
+        rich_survey.update(self.get_grimoire_fields(
+            item['data']["started_at"], "pull_request"))
 
         item[self.get_field_date()] = rich_survey[self.get_field_date()]
         rich_survey.update(self.get_item_sh(item, self.pr_roles))
         return rich_survey
 
-    
-    
     def __get_survey_answer_role(self, name, item):
-            if name in [item["issue_data"]["user"]["login"],item["issue_data"]["user"]["name"]]:
-                return "issue_owner"
-            elif item["issue_data"]["assignee"] and name in item["issue_data"]["assignee"]:
-                return "assignee"
-            elif name in [user["user"]["login"] for user in item["comment_data"]]:
-                return "commenter"
-           
-            return None
+        if name in [item["issue_data"]["user"]["login"], item["issue_data"]["user"]["name"]]:
+            return "issue_owner"
+        elif item["issue_data"]["assignee"] and name in item["issue_data"]["assignee"]:
+            return "assignee"
+        elif name in [user["user"]["login"] for user in item["comment_data"]]:
+            return "commenter"
 
+        return None
 
     def enrich_onion(self, ocean_backend, enrich_backend,
                      in_index, out_index, data_source=None, no_incremental=False,

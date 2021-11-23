@@ -111,12 +111,13 @@ class SurveyqqOcean(ElasticOcean):
                 'company': None,
                 'location': None,
             }
-        
+
     def get_repository_filter_raw(self, term=False):
         """Returns the filter to be used in queries in a repository items"""
 
         perceval_backend_name = self.get_connector_name()
-        self.perceval_backend.set_origin(GITEE + self.perceval_backend.owner +"/" + self.perceval_backend.repository)
-        filter_ = get_repository_filter(self.perceval_backend, perceval_backend_name, term)
+        self.perceval_backend.set_origin(
+            GITEE + self.perceval_backend.owner + "/" + self.perceval_backend.repository)
+        filter_ = get_repository_filter(
+            self.perceval_backend, perceval_backend_name, term)
         return filter_
-
