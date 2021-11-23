@@ -144,19 +144,9 @@ class SurveyqqEnrich(Enrich):
         identity = {}
 
         user_answer  = item_answer[0]["questions"]  # by default a specific user dict is expected
-        # if 'data' in item and type(item) == dict:
-        #     user = item['data'][identity_field]
-
-        # if not user:
-        #     return identity
-
         identity['username'] = user_answer[0]["text"]
         identity['email'] = user_answer[1]["text"]
         identity['name'] = None
-        # if 'email' in user:
-        #     identity['email'] = user['email']
-        # if 'name' in user:
-        #     identity['name'] = user['name']
         return identity
 
     def get_project_repository(self, eitem):
@@ -164,83 +154,12 @@ class SurveyqqEnrich(Enrich):
         return repo
     
 
-    # def get_time_to_first_attention(self, item):
-    #     """Get the first date at which a comment was made to the issue by someone
-    #     other than the user who created the issue
-    #     """
-    #     comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']
-    #                      if item['user']['login'] != comment['user']['login']]
-    #     if comment_dates:
-    #         return min(comment_dates)
-    #     return None
-
-    #exclude bot
-    def get_num_of_comments_without_bot(self, item):
-        """Get the num of comment was made to the issue by someone
-        other than the user who created the issue and bot
-        """
-        comments = [comment for comment in item['comments_data']
-                         if item['user']['login'] != comment['user']['login'] \
-                             and not (comment['user']['name'].endswith("-bot"))]
-        return len(comments)
-
-    #exclude bot
-    def get_time_to_first_attention_without_bot(self, item):
-        """Get the first date at which a comment was made to the issue by someone
-        other than the user who created the issue and bot
-        """
-        comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']
-                         if item['user']['login'] != comment['user']['login'] \
-                             and not (comment['user']['name'].endswith("-bot"))]
-        if comment_dates:
-            return min(comment_dates)
-        return None
-
-    def get_time_to_merge_request_response(self, item):
-        """Get the first date at which a review was made on the PR by someone
-        other than the user who created the PR
-        """
-        review_dates = []
-        for comment in item['review_comments_data']:
-            # skip comments of ghost users
-            if not comment['user']:
-                continue
-
-            # skip comments of the pull request creator
-            if item['user']['login'] == comment['user']['login']:
-                continue
-
-            review_dates.append(str_to_datetime(comment['created_at']))
-
-        if review_dates:
-            return min(review_dates)
-
-        return None
-
-    def get_latest_comment_date(self, item):
-        """Get the date of the latest comment on the issue/pr"""
-
-        comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']]
-        if comment_dates:
-            return max(comment_dates)
-        return None
-
-    def get_num_commenters(self, item):
-        """Get the number of unique people who commented on the issue/pr"""
-
-        commenters = [comment['user']['login'] for comment in item['comments_data']]
-        return len(set(commenters))
-
     @metadata
     def get_rich_item(self, item):
 
         rich_item = {}
         if item['category'] == 'issue':
             rich_item = self.__get_rich_survey(item)
-        elif item['category'] == 'pull_request':
-            rich_item = self.__get_rich_pull(item)
-        elif item['category'] == 'repository':
-            rich_item = self.__get_rich_repo(item)
         else:
             logger.error("[github] rich item not defined for GitHub category {}".format(
                          item['category']))
@@ -249,112 +168,7 @@ class SurveyqqEnrich(Enrich):
         self.add_metadata_filter_raw(rich_item)
         return rich_item
 
-    def __get_rich_pull(self, item):
-        rich_pr = {}
-
-        for f in self.RAW_FIELDS_COPY:
-            if f in item:
-                rich_pr[f] = item[f]
-            else:
-                rich_pr[f] = None
-        # The real data
-        pull_request = item['data']
-
-        #说明修改原因
-        if pull_request['state'] == 'merged':
-            rich_pr['time_to_close_days'] = \
-                get_time_diff_days(pull_request['created_at'], pull_request['merged_at'])
-        else:
-           rich_pr['time_to_close_days'] = \
-                get_time_diff_days(pull_request['created_at'], pull_request['closed_at'])
-        ##说明修改原因 
-        if pull_request['state'] == 'open':
-            rich_pr['time_open_days'] = \
-                get_time_diff_days(pull_request['created_at'], datetime_utcnow().replace(tzinfo=None))
-        else:
-            rich_pr['time_open_days'] = rich_pr['time_to_close_days']
-
-        rich_pr['user_login'] = pull_request['user']['login']
-
-        user = pull_request.get('user_data', None)
-        if user is not None and user:
-            rich_pr['user_name'] = user['name']
-            rich_pr['author_name'] = user['name']
-            rich_pr["user_domain"] = self.get_email_domain(user['email']) if user.get('email', None) else None
-            rich_pr['user_org'] = user.get('company', None)
-            rich_pr['user_location'] = user.get('location', None)
-            rich_pr['user_geolocation'] = None
-        else:
-            rich_pr['user_name'] = None
-            rich_pr["user_domain"] = None
-            rich_pr['user_org'] = None
-            rich_pr['user_location'] = None
-            rich_pr['user_geolocation'] = None
-            rich_pr['author_name'] = None
-
-        merged_by = pull_request.get('merged_by_data', None)
-        if merged_by and merged_by is not None:
-            rich_pr['merge_author_login'] = merged_by['login']
-            rich_pr['merge_author_name'] = merged_by['name']
-            rich_pr["merge_author_domain"] = self.get_email_domain(merged_by['email']) if merged_by.get('email', None) else None
-            rich_pr['merge_author_org'] = merged_by.get('company', None)
-            rich_pr['merge_author_location'] = merged_by.get('location', None)
-            rich_pr['merge_author_geolocation'] = None
-        else:
-            rich_pr['merge_author_name'] = None
-            rich_pr['merge_author_login'] = None
-            rich_pr["merge_author_domain"] = None
-            rich_pr['merge_author_org'] = None
-            rich_pr['merge_author_location'] = None
-            rich_pr['merge_author_geolocation'] = None
-
-        rich_pr['id'] = pull_request['id']
-        rich_pr['id_in_repo'] = pull_request['html_url'].split("/")[-1]
-        rich_pr['repository'] = self.get_project_repository(rich_pr)
-        rich_pr['title'] = pull_request['title']
-        rich_pr['title_analyzed'] = pull_request['title']
-        rich_pr['state'] = pull_request['state']
-        rich_pr['created_at'] = pull_request['created_at']
-        rich_pr['updated_at'] = pull_request['updated_at']
-        rich_pr['merged'] = pull_request['state'] == 'merged'
-        rich_pr['merged_at'] = pull_request['merged_at']
-        rich_pr['closed_at'] = pull_request['closed_at']
-        rich_pr['url'] = pull_request['html_url']
-        labels = []
-        [labels.append(label['name']) for label in pull_request['labels'] if 'labels' in pull_request]
-        rich_pr['labels'] = labels
-
-        rich_pr['pull_request'] = True
-        rich_pr['item_type'] = 'pull request'
-
-        rich_pr['gitee_repo'] = rich_pr['repository'].replace(GITEE, '')
-        rich_pr['gitee_repo'] = re.sub('.git$', '', rich_pr['gitee_repo'])
-        rich_pr["url_id"] = rich_pr['gitee_repo'] + "/pull/" + rich_pr['id_in_repo']
-
-        # GMD code development metrics
-        rich_pr['forks'] = None
-        rich_pr['code_merge_duration'] = get_time_diff_days(pull_request['created_at'],
-                                                            pull_request['merged_at'])
-        rich_pr['num_review_comments'] = len(pull_request['review_comments_data'])
-
-        rich_pr['time_to_merge_request_response'] = None
-        if rich_pr['num_review_comments'] != 0:
-            min_review_date = self.get_time_to_merge_request_response(pull_request)
-            rich_pr['time_to_merge_request_response'] = \
-                get_time_diff_days(str_to_datetime(pull_request['created_at']), min_review_date)
-
-        if self.prjs_map:
-            rich_pr.update(self.get_item_project(rich_pr))
-
-        if 'project' in item:
-            rich_pr['project'] = item['project']
-
-        rich_pr.update(self.get_grimoire_fields(pull_request['created_at'], "pull_request"))
-
-        item[self.get_field_date()] = rich_pr[self.get_field_date()]
-        rich_pr.update(self.get_item_sh(item, self.pr_roles))
-
-        return rich_pr
+ 
     def __get_rich_survey(self, item):
         rich_survey = {}
         survey = item['data']["answer"][0]["questions"]
@@ -370,132 +184,26 @@ class SurveyqqEnrich(Enrich):
         if rich_survey["survey_score"] in range(9,11):
             rich_survey["issue_satisfied"] = [op["text"] for op in survey[5]["options"]]
         
-        if not (item['data']['comment_data']=="Invalid Issue Link" or item['data']['comment_data']=="Can't get message about Issue"):
-            print('rich_survey["user_login"]',rich_survey["user_login"])
-            # print("item['data']",item['data'])
-
+        if item['data']['comment_data'] not in ["Invalid Issue Link" ,"Can't get message about Issue"]:
             rich_survey["survey_answer_role"] = self.__get_survey_answer_role(rich_survey["user_login"], item['data'])
+       
+        
+        if self.prjs_map:
+            rich_survey.update(self.get_item_project(rich_survey))
+
+        if 'project' in item:
+            rich_survey['project'] = item['project']
+
+        rich_survey.update(self.get_grimoire_fields(item['data']["started_at"], "pull_request"))
+
+        item[self.get_field_date()] = rich_survey[self.get_field_date()]
+        rich_survey.update(self.get_item_sh(item, self.pr_roles))
         return rich_survey
 
     
-
-
-
-    def __get_rich_issue(self, item):
-        rich_issue = {}
-
-        for f in self.RAW_FIELDS_COPY:
-            if f in item:
-                rich_issue[f] = item[f]
-            else:
-                rich_issue[f] = None
-        # The real data
-        if not (item['data']['comment_date']=="Invalid Issue Link" or item['data']['comment_date']=="Can't get message about Issue"):
-            issue = item['data']["issue_data"]
-            survey = item['data']["answer"]
-        
-
-        # rich_issue['time_to_close_days'] = \
-        #     get_time_diff_days(issue['created_at'], issue['finished_at'])
-
-        #说明原因
-        # if issue['state'] == 'open' or issue['state'] == 'progressing':
-        #     rich_issue['time_open_days'] = \
-        #         get_time_diff_days(issue['created_at'], datetime_utcnow().replace(tzinfo=None))
-        # else:
-        #     rich_issue['time_open_days'] = rich_issue['time_to_close_days']
-
-            rich_issue['user_login'] = issue['user']['login']
-
-            user = issue.get('user_data', None)
-            if user is not None and user:
-                rich_issue['user_name'] = user['name']
-                rich_issue['author_name'] = user['name']
-                rich_issue["user_domain"] = self.get_email_domain(user['email']) if user.get('email', None) else None
-                rich_issue['user_org'] = user.get('company', None)
-                rich_issue['user_location'] = user.get('location', None)
-                rich_issue['user_geolocation'] = None
-            else:
-                rich_issue['user_name'] = None
-                rich_issue["user_domain"] = None
-                rich_issue['user_org'] = None
-                rich_issue['user_location'] = None
-                rich_issue['user_geolocation'] = None
-                rich_issue['author_name'] = None
-
-            assignee = issue.get('assignee_data', None)
-            if assignee and assignee is not None:
-                assignee = issue['assignee_data']
-                rich_issue['assignee_login'] = assignee['login']
-                rich_issue['assignee_name'] = assignee['name']
-                rich_issue["assignee_domain"] = self.get_email_domain(assignee['email']) if assignee.get('email', None) else None
-                rich_issue['assignee_org'] = assignee.get('company', None)
-                rich_issue['assignee_location'] = assignee.get('location', None)
-                rich_issue['assignee_geolocation'] = None
-            else:
-                rich_issue['assignee_name'] = None
-                rich_issue['assignee_login'] = None
-                rich_issue["assignee_domain"] = None
-                rich_issue['assignee_org'] = None
-                rich_issue['assignee_location'] = None
-                rich_issue['assignee_geolocation'] = None
-
-            rich_issue['id'] = issue['id']
-            rich_issue['id_in_repo'] = issue['html_url'].split("/")[-1]
-            rich_issue['repository'] = self.get_project_repository(rich_issue)
-            rich_issue['title'] = issue['title']
-            rich_issue['title_analyzed'] = issue['title']
-            rich_issue['state'] = issue['state']
-            rich_issue['created_at'] = issue['created_at']
-            rich_issue['updated_at'] = issue['updated_at']
-            rich_issue['closed_at'] = issue['finished_at']
-            rich_issue['url'] = issue['html_url']
-            rich_issue['issue_type'] = issue['issue_type']
-            labels = []
-            [labels.append(label['name']) for label in issue['labels'] if 'labels' in issue]
-            rich_issue['labels'] = labels
-
-            rich_issue['pull_request'] = True
-            rich_issue['item_type'] = 'pull request'
-            if 'head' not in issue.keys() and 'pull_request' not in issue.keys():
-                rich_issue['pull_request'] = False
-                rich_issue['item_type'] = 'issue'
-
-            rich_issue['gitee_repo'] = rich_issue['repository'].replace(GITEE, '')
-            rich_issue['gitee_repo'] = re.sub('.git$', '', rich_issue['gitee_repo'])
-            rich_issue["url_id"] = rich_issue['gitee_repo'] + "/issues/" + rich_issue['id_in_repo']
-
-            if self.prjs_map:
-                rich_issue.update(self.get_item_project(rich_issue))
-            
-            rich_issue["survey_answer_role"] = self.__get_survey_answer_role(name,item['data'])
-
-
-            # if 'project' in item:
-            #     rich_issue['project'] = item['project']
-
-            # rich_issue['time_to_first_attention'] = None
-        # if item['data']['comment_date']=="Invalid Issue Link" or item['data']['comment_date']=="Can't get message about Issue":
-            # rich_issue['time_to_first_attention'] = \
-            #     get_time_diff_days(str_to_datetime(issue['created_at']),
-            #                        self.get_time_to_first_attention(issue))
-            # rich_issue['num_of_comments_without_bot'] = \
-            #                        self.get_num_of_comments_without_bot(issue)
-            # rich_issue['time_to_first_attention_without_bot'] = \
-            #     get_time_diff_days(str_to_datetime(issue['created_at']),
-            #                         self.get_time_to_first_attention_without_bot(issue))
-
-            rich_issue.update(self.get_grimoire_fields(issue['created_at'], "issue"))
-
-            item[self.get_field_date()] = rich_issue[self.get_field_date()]
-            rich_issue.update(self.get_item_sh(item, self.issue_roles))
-        
-        
-
-        return rich_issue
     
     def __get_survey_answer_role(self, name, item):
-            if name == item["issue_data"]["user"]["login"]:
+            if name in [item["issue_data"]["user"]["login"],item["issue_data"]["user"]["name"]]:
                 return "issue_owner"
             elif item["issue_data"]["assignee"] and name in item["issue_data"]["assignee"]:
                 return "assignee"
@@ -504,39 +212,6 @@ class SurveyqqEnrich(Enrich):
            
             return None
 
-            
-
-        
-            
-        
-        
-
-
-
-
-    def __get_rich_repo(self, item):
-        rich_repo = {}
-
-        for f in self.RAW_FIELDS_COPY:
-            if f in item:
-                rich_repo[f] = item[f]
-            else:
-                rich_repo[f] = None
-
-        repo = item['data']
-
-        rich_repo['forks_count'] = repo['forks_count']
-        rich_repo['subscribers_count'] = repo['watchers_count']
-        rich_repo['stargazers_count'] = repo['stargazers_count']
-        rich_repo['fetched_on'] = repo['fetched_on']
-        rich_repo['url'] = repo['html_url']
-
-        if self.prjs_map:
-            rich_repo.update(self.get_item_project(rich_repo))
-
-        rich_repo.update(self.get_grimoire_fields(item['metadata__updated_on'], "repository"))
-
-        return rich_repo
 
     def enrich_onion(self, ocean_backend, enrich_backend,
                      in_index, out_index, data_source=None, no_incremental=False,
@@ -561,15 +236,3 @@ class SurveyqqEnrich(Enrich):
                              sort_on_field=sort_on_field,
                              no_incremental=no_incremental,
                              seconds=seconds)
-
-
-def get_repository_filter(perceval_backend, perceval_backend_name, term=False):
-    """ Get the filter needed for get the items in a repository """
-
-    filter_ = {}
-
-    if not perceval_backend:
-        return filter_
-
-    field = 'origin'
-    value = GITEE +perceval_backend.owner +"/" + perceval_backend.owner
