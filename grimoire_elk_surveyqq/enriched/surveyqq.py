@@ -166,28 +166,88 @@ class SurveyqqEnrich(Enrich):
         self.add_metadata_filter_raw(rich_item)
         return rich_item
 
+    def is_right_issue_link(self, data):
+        if data not in ["Invalid Issue Link", "Can't get message about Issue"]:
+            return True
+        else:
+            return False
+
+    def get_time_to_first_attention(self, item):
+        """Get the first date at which a comment was made to the issue by someone
+        other than the user who created the issue
+        """
+        comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comments_data']
+                         if item['user']['login'] != comment['user']['login']]
+        if comment_dates:
+            return min(comment_dates)
+        return None
+
+    def get_time_to_first_attention_without_bot(self, item):
+        """Get the first date at which a comment was made to the issue by someone
+        other than the user who created the issue and bot
+        """
+        comment_dates = [str_to_datetime(comment['created_at']) for comment in item['comment_data']
+                         if item['issue_data']['user']['login'] != comment['user']['login']
+                         and not (comment['user']['name'].endswith("-bot"))]
+        if comment_dates:
+            return min(comment_dates)
+        return None
+
     def __get_rich_survey(self, item):
         rich_survey = {}
-        survey = item['data']["answer"][0]["questions"]
-        rich_survey["user_login"] = survey[0]["text"]
-        rich_survey["user_email"] = survey[1]["text"]
-        rich_survey["issue_link"] = survey[2]["text"]
-        rich_survey["survey_score"] = survey[3]["text"]
-        rich_survey["participated_reason"] = [op["text"]
-                                              for op in survey[4]["options"]]
-        if rich_survey["survey_score"] in range(0, 7):
-            rich_survey["issue_unsatisfied"] = [op["text"]
-                                                for op in survey[5]["options"]]
-        if rich_survey["survey_score"] in range(7, 9):
-            rich_survey["issue_to_improve"] = [op["text"]
-                                               for op in survey[5]["options"]]
-        if rich_survey["survey_score"] in range(9, 11):
-            rich_survey["issue_satisfied"] = [op["text"]
-                                              for op in survey[5]["options"]]
 
-        if item['data']['comment_data'] not in ["Invalid Issue Link", "Can't get message about Issue"]:
-            rich_survey["survey_answer_role"] = self.__get_survey_answer_role(
-                rich_survey["user_login"], item['data'])
+        survey = item['data']['answer'][0]['questions']
+        rich_survey['user_login'] = survey[0]['text']
+        rich_survey['user_email'] = survey[1]['text']
+        rich_survey['issue_link'] = survey[2]['text']
+        rich_survey['survey_score'] = survey[3]['text']
+        rich_survey['participated_reason'] = [op['text']
+                                              for op in survey[5]['options']]
+        score = int(rich_survey['survey_score'])
+        if score in range(0, 7):
+            rich_survey['issue_unsatisfied'] = [op['text']
+                                                for op in survey[4]['options']]
+        elif score in range(7, 9):
+            rich_survey['issue_to_improve'] = [op['text']
+                                               for op in survey[4]['options']]
+        elif score in range(9, 11):
+            rich_survey['issue_satisfied'] = [op['text']
+                                              for op in survey[4]['options']]
+        rich_survey['user_appeal'] = [op['text']
+                                      for op in survey[6]['options']]
+
+        if self.is_right_issue_link(item['data']['issue_data']):
+            issue = item['data']['issue_data']
+            rich_survey['survey_answer_role'] = self.__get_survey_answer_role(
+                rich_survey['user_login'], item['data'])
+
+            if issue['state'] == 'open' or issue['state'] == 'progressing':
+                rich_survey['issue_time_open_days'] = \
+                    get_time_diff_days(
+                        issue['created_at'], datetime_utcnow().replace(tzinfo=None))
+            else:
+                rich_survey['issue_time_open_days'] = get_time_diff_days(
+                    issue['created_at'], issue['finished_at'])
+
+            if item['data']['comment_data'] != []:
+                rich_survey['issue_time_to_first_attention'] = get_time_diff_days(str_to_datetime(issue['created_at']),
+                                                                                  self.get_time_to_first_attention_without_bot(item['data']))
+            else:
+                rich_survey['issue_time_to_first_attention'] = None
+
+            labels = []
+            [labels.append(label['name'])
+             for label in issue['labels'] if 'labels' in issue]
+            rich_survey['issue_labels'] = labels
+
+            rich_survey['issue_milestone'] = issue['milestone']['title'] if issue['milestone'] else None
+
+        else:
+            rich_survey['survey_answer_role'] = None
+            rich_survey['issue_time_open_days'] = None
+            rich_survey['issue_time_to_first_attention'] = None
+            rich_survey['issue_labels'] = None
+            rich_survey['issue_milestone'] = None
 
         if self.prjs_map:
             rich_survey.update(self.get_item_project(rich_survey))
@@ -196,19 +256,19 @@ class SurveyqqEnrich(Enrich):
             rich_survey['project'] = item['project']
 
         rich_survey.update(self.get_grimoire_fields(
-            item['data']["started_at"], "pull_request"))
+            item['data']['started_at'], 'issue'))
 
         item[self.get_field_date()] = rich_survey[self.get_field_date()]
         rich_survey.update(self.get_item_sh(item, self.pr_roles))
         return rich_survey
 
     def __get_survey_answer_role(self, name, item):
-        if name in [item["issue_data"]["user"]["login"], item["issue_data"]["user"]["name"]]:
-            return "issue_owner"
-        elif item["issue_data"]["assignee"] and name in item["issue_data"]["assignee"]:
-            return "assignee"
-        elif name in [user["user"]["login"] for user in item["comment_data"]]:
-            return "commenter"
+        if name in [item['issue_data']['user']['login'], item['issue_data']['user']['name']]:
+            return 'issue_owner'
+        elif item['issue_data']['assignee'] and name in item['issue_data']['assignee']:
+            return 'assignee'
+        elif name in [user['user']['login'] for user in item['comment_data']]:
+            return 'commenter'
 
         return None
 
