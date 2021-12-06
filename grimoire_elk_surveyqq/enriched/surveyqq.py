@@ -116,10 +116,7 @@ class SurveyqqEnrich(Enrich):
 
     def get_identities(self, item):
         """Return the identities from an item"""
-
-        category = item['category']
         item = item['data']
-
         user = self.get_sh_identity(item["answer"])
         return user
 
@@ -146,7 +143,7 @@ class SurveyqqEnrich(Enrich):
         identity['username'] = user_answer[0]["text"]
         identity['email'] = user_answer[1]["text"]
         identity['name'] = None
-        return identity
+        return [identity]
 
     def get_project_repository(self, eitem):
         repo = eitem['origin']
