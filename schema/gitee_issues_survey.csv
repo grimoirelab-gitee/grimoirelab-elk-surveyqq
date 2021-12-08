@@ -1,0 +1,19 @@
+name,type,description
+user_login,keyword,User's login name filled in surveyqq.
+user_email,keyword,User's email filled in surveyqq.
+issue_link,keyword,User's issue link filled in surveyqq.
+survey_score,keyword,User's score filled in surveyqq.
+participated_reason,keyword,User's participated reason filled in surveyqq.
+issue_unsatisfied,keyword,User's unsatisfied reason filled in surveyqq.
+issue_to_improve,keyword,The places where the issue needs to be improved
+issue_satisfied,keyword,The reasons users feel satisfied with the issue
+user_appeal,keyword,User's appeal filled in surveyqq.
+survey_answer_role,keyword,User's role in the issue link.
+issue_time_open_days,float,Time the issue is open counted in days.
+issue_time_to_first_attention,float,Time to first attention to an issue counted in days.
+issue_labels,keyword,The labels assigned to an issue.
+issue_milestone,keyword,The milestones assigned to an issue.
+grimoire_creation_date,date,Surveyqq creation date.
+project,keyword,Used if more than one project levels are allowed in the project hierarchy.
+project_1,keyword,Project name.
+metadata__enriched_on,keyword,Date when the data were enriched.
